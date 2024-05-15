@@ -28,7 +28,7 @@
 
 <hr>
 
-<span>[ <a href="README.md">English</a> | 中文 ]</span>
+`<span>`[ `<a href="README.md">`English`</a>` | 中文 ]
 
 OpenRLHF 是一个基于 Ray、DeepSpeed 和 HF Transformers 构建的高性能 RLHF 框架：
 
@@ -37,10 +37,9 @@ OpenRLHF 是一个基于 Ray、DeepSpeed 和 HF Transformers 构建的高性能 
 - **分布式 RLHF**:  OpenRLHF 使用 Ray 将 Actor、Reward、Reference 和 Critic 模型分布到不同的 GPU 上，同时将 Adam 优化器放在 CPU 上。这使得使用多个 A100 80G GPU 和 vLLM 可以全面微调超过 70B+ 的模型 (见 [architecture](./docs/ray_architecture.png)) 以及在多个 24GB RTX 4090 GPU 上微调 7B 模型。
 - **PPO 实现技巧**: 我们集成了 PPO 的实现技巧以提高训练稳定性，参考 https://arxiv.org/abs/2005.12729 和 https://iclr-blog-track.github.io/2022/03/25/ppo-implementation-details/.
 
-
 ## 特性
 
-- 基于 Ray 的分布式 [PPO based on Ray](./examples/scripts/train_ppo_llama_ray.sh). 
+- 基于 Ray 的分布式 [PPO based on Ray](./examples/scripts/train_ppo_llama_ray.sh).
 - 支持使用 [超过 70 亿参数的模型进行全面 RLHF 微调](./examples/scripts/train_ppo_llama_ray_70b.sh).
 - 支持 vLLM 生成加速在 RLHF 中 (--vllm_num_engines).
 - 支持多个奖励模型 (--reward_pretrain model1,model2...).
@@ -54,53 +53,53 @@ OpenRLHF 是一个基于 Ray、DeepSpeed 和 HF Transformers 构建的高性能 
 - 支持 QLoRA (--load_in_4bit), LoRA (--lora_rank, --target_modules).
 - 多节点 [训练脚本](./examples/scripts/train_llama_slurm.sh) 适用于 Slurm.
 
-**待办事项** 
+**待办事项**
+
 - 允许保存和加载训练检查点。
 - 支持混合 vLLM 推理引擎。
 
 **PPO 支持矩阵**
 
-| 特性 | OpenRLHF | DSChat | CAIChat | TRL |
-| ------------- |:-------------:| :-------------:| :-------------:| :-------------:| 
-| 使用 16 个 A100 完成 70B+ 全微调      | ✅ | ❌ | ❌ | ❌ ||
-| 使用 4 个 RTX4090 完成 7B 全微调 | ✅      |    ❌ | ❌ | ❌ | 
-| 使用 8 个 A100 完成 34B DPO 全微调 | ✅      |    ❌ | ❌ | ❌ |   
-| PPO 实现技巧 | ✅      |    ❌ | ❌ | ✅ | 
-| 支持 QLoRA | ✅      |    ❌ | ❌ | ✅ | 
-| 支持 Mixtral 8*7b | ✅      |    ❌ | ❌ | ❌ | 
-| 支持未合并的 Actor-Critic | ✅     |   ✅ | ✅ | ❌ | 
-| 支持多个奖励模型 | ✅      |    ❌ | ❌ | ❌ |   
-| 支持 Huggingface 模型 | ✅      |    ✅ | ✅ | ✅ | 
-| 易于使用 | ✅      |   ✅ | ✅ | ✅ | 
-
+| 特性                               | OpenRLHF | DSChat | CAIChat | TRL |
+| ---------------------------------- | :------: | :----: | :-----: | :-: |
+| 使用 16 个 A100 完成 70B+ 全微调   |    ✅    |   ❌   |   ❌   | ❌ |
+| 使用 4 个 RTX4090 完成 7B 全微调   |    ✅    |   ❌   |   ❌   | ❌ |
+| 使用 8 个 A100 完成 34B DPO 全微调 |    ✅    |   ❌   |   ❌   | ❌ |
+| PPO 实现技巧                       |    ✅    |   ❌   |   ❌   | ✅ |
+| 支持 QLoRA                         |    ✅    |   ❌   |   ❌   | ✅ |
+| 支持 Mixtral 8*7b                  |    ✅    |   ❌   |   ❌   | ❌ |
+| 支持未合并的 Actor-Critic          |    ✅    |   ✅   |   ✅   | ❌ |
+| 支持多个奖励模型                   |    ✅    |   ❌   |   ❌   | ❌ |
+| 支持 Huggingface 模型              |    ✅    |   ✅   |   ✅   | ✅ |
+| 易于使用                           |    ✅    |   ✅   |   ✅   | ✅ |
 
 ## 性能
-**通用配置** 
+
+**通用配置**
 
 - Ray: 用于 Actor 的 4 个 A100 80G，用于 Critic 的 2 个 A100 80G，用于 RM 的 1 个 A100 80G，以及用于 InitPolicy 的 1 个 A100 80G
 - DeepSpeed: 使用 Adam Offload 的 ZeRO2
-- 最大序列长度: 2048 
-
+- 最大序列长度: 2048
 
 **吞吐量**
 
-| 模型 | 微批量大小 (rollout/train) | 吞吐量 | 生成长度 |
-|-|-|-|-|  
-| 7B llama2 | 16/8 | 0.136 样本/gpu/秒 | 100-300 |
-| 13B llama2 | 8/4 | 0.05 样本/gpu/秒 | 200-400 |
-| 34B codellama | 2/1 | 0.009 样本/gpu/秒 | 300-800 |
+| 模型          | 微批量大小 (rollout/train) | 吞吐量            | 生成长度 |
+| ------------- | -------------------------- | ----------------- | -------- |
+| 7B llama2     | 16/8                       | 0.136 样本/gpu/秒 | 100-300  |
+| 13B llama2    | 8/4                        | 0.05 样本/gpu/秒  | 200-400  |
+| 34B codellama | 2/1                        | 0.009 样本/gpu/秒 | 300-800  |
 
 样本/gpu/秒 = PPO 样本数量 / A100 GPU 数量 / 秒数
 
 **OpenRLHF vs DSChat**
 
-|        | 7B llama2 PPO | 13B llama2 PPO (50k 样本) | 
-|  ----  | ----  |  ----  |
-| OpenRLHF  | - | 使用 8 个 A100 耗时 17 小时  | 
-| DeepSpeedChat  | - | 使用 16 个 A100 耗时 48 小时  |
-
+|               | 7B llama2 PPO | 13B llama2 PPO (50k 样本)    |
+| ------------- | ------------- | ---------------------------- |
+| OpenRLHF      | -             | 使用 8 个 A100 耗时 17 小时  |
+| DeepSpeedChat | -             | 使用 16 个 A100 耗时 48 小时 |
 
 ## 运行示例
+
 > [!IMPORTANT]
 > 您可以通过 **nvidia-docker(推荐)** 或 conda 环境构建 openrlhf。
 
@@ -110,7 +109,7 @@ git clone https://github.com/openllmai/OpenRLHF.git
 ```
 
 **安装 nvidia-docker 和 OpenRLHF**
-  
+
 ```bash
 cd examples/scripts
 
@@ -136,6 +135,7 @@ huggingface-cli login
 wandb.login()
 
 ```
+
 **单节点训练**
 
 ```shell
@@ -165,6 +165,7 @@ wandb.login()
 ```
 
 **使用Ray进行PPO训练**
+
 > [!TIP]
 > 适用于V100/A100/H100的13B模型或RTX4090上的7B模型
 
@@ -212,8 +213,6 @@ sbatch ./train_ppo_llama_ray_slurm.sh
 
 完成训练后，您可以使用 `inference` 脚本评估您的模型：
 
-
-
 ```bash
 # 批量生成
 # 支持 vLLM 加速（--eval_task generate_vllm）
@@ -226,12 +225,14 @@ python examples/batch_inference.py {args}
 **从 conda 环境构建 openrlhf**
 
 如果您真的不想使用 nvidia-docker，我们还提供了从 conda 环境构建 openrlhf 的教程。（我们更推荐使用 nvidia-docker，以避免环境引起的错误。）
+
 ```shell
 # 我们需要 conda
 conda create -n openrlhf python=3.10
 # 因此，我们需要手动安装一些包：安装 torch 时，您可能需要匹配相应的 cuda 版本。
 pip install packaging ninja
 pip3 install torch
+conda install pytorch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 pytorch-cuda=11.8 -c pytorch -c nvidia
 # 检查 ninja
 ninja --version
 echo $? # output: 0
@@ -289,6 +290,7 @@ pip install flash-attn==2.5.0
 我们的项目还想要感谢 [ColossalChat](https://github.com/hpcaitech/ColossalAI/tree/main/applications/Chat) 和 [DeepSpeedChat](https://github.com/microsoft/DeepSpeedExamples/tree/master/applications/DeepSpeed-Chat)。在项目的早期阶段，我们参考了他们的代码设计。
 
 ## 引用
+
 ```
 @misc{hu23openrlhf,
 author = {Jian Hu and Xibin Wu and Xianyu and Chen Su and Leon Qiu and Daoning Jiang and Qing Wang and Weixun Wang},
@@ -300,7 +302,6 @@ howpublished = {\url{https://github.com/OpenLLMAI/OpenRLHF}}
 }
 ```
 
-
-______________________________________________________________________
+---
 
 *OpenRLHF © 2024 OpenLLMAI. 版权所有。*
