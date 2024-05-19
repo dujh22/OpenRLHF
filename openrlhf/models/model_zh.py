@@ -160,34 +160,38 @@ def get_llm_for_sequence_regression(
     return model  # 返回模型
 
 
-# 获取奖励模型的辅助函数
+# 定义一个获取奖励模型的辅助函数
 def _get_reward_model(base_pretrained_model, base_llm_model):
+    # 定义一个新的类，继承自base_pretrained_model
     class LLMForSequenceRegression(base_pretrained_model):
-        supports_gradient_checkpointing = True  # 支持梯度检查点
+        supports_gradient_checkpointing = True  # 支持梯度检查点，有助于节省内存
 
+        # 构造函数，初始化模型
         def __init__(self, config: AutoConfig):
-            super().__init__(config)
-            setattr(self, self.base_model_prefix, base_llm_model(config))
+            super().__init__(config)  # 调用父类的构造方法
+            setattr(self, self.base_model_prefix, base_llm_model(config))  # 设置基础模型
 
-            self.value_head = nn.Linear(config.hidden_size, 1, bias=False)  # 添加线性层作为 value_head
+            # 在模型中添加一个线性层作为 value_head，用于输出奖励值
+            self.value_head = nn.Linear(config.hidden_size, 1, bias=False)
 
-            # 标准化奖励
+            # 标准化奖励的设置
             self.normalize_reward = config.normalize_reward
-            self.register_buffer("mean", torch.zeros(1), persistent=False)  # 注册均值缓冲区
-            self.register_buffer("std", torch.ones(1), persistent=False)  # 注册标准差缓冲区
+            self.register_buffer("mean", torch.zeros(1), persistent=False)  # 注册一个均值缓冲区
+            self.register_buffer("std", torch.ones(1), persistent=False)  # 注册一个标准差缓冲区
 
-            # 从配置文件中加载均值和标准差
+            # 如果配置中提供了均值和标准差，则使用这些值初始化缓冲区
             if hasattr(config, "mean"):
                 self.mean[0] = config.mean
                 self.std[0] = config.std
 
+        # 定义前向传播函数
         def forward(
             self,
             input_ids: torch.LongTensor = None,
             attention_mask: Optional[torch.Tensor] = None,
             return_output=False,
         ) -> torch.Tensor:
-            # 参考：https://github.com/OpenLLMAI/OpenRLHF/issues/217
+            # 根据attention_mask计算position_ids，用于位置编码
             position_ids = attention_mask.long().cumsum(-1) - 1
             position_ids.masked_fill_(attention_mask == 0, 1)
             outputs = getattr(self, self.base_model_prefix)(
@@ -196,22 +200,27 @@ def _get_reward_model(base_pretrained_model, base_llm_model):
             last_hidden_states = outputs["last_hidden_state"]
             values = self.value_head(last_hidden_states).squeeze(-1)
 
-            # 在训练模式下进行左填充
+            # 在训练模式下，使用最后一个token的值作为奖励
             if self.training:
                 reward = values[:, -1]
             else:
+                # 在评估模式下，找到每个序列的结束符并使用对应的值作为奖励
                 eos_indices = attention_mask.size(1) - 1 - attention_mask.long().fliplr().argmax(dim=1, keepdim=True)
                 reward = values.gather(dim=1, index=eos_indices).squeeze(1)
 
-                # 在评估模式下标准化奖励
+                # 如果启用了奖励标准化，则进行标准化处理
                 if self.normalize_reward:
                     reward = (reward - self.mean) / self.std
+
+            # 根据需要返回奖励值和完整的模型输出
             if return_output:
                 return reward, outputs
             else:
                 return reward
 
-    return LLMForSequenceRegression  # 返回奖励模型类
+    # 返回定义的奖励模型类
+    return LLMForSequenceRegression
+
 
 
 # 获取批判模型的辅助函数
