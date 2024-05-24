@@ -22,5 +22,5 @@ read -r -d '' training_commands <<EOF
 EOF
 
 if [[ ${1} != "slurm" ]]; then
-    deepspeed --include="localhost:0,6" $training_commands
+    deepspeed --include="localhost:2,3" $training_commands
 fi

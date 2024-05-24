@@ -272,77 +272,109 @@ class DeepspeedStrategy(ABC):
 
     # 保存模型
     def save_model(self, model: nn.Module, tokenizer, output_dir, **kwargs) -> None:
+        # 如果当前进程是rank 0，创建输出目录（如果不存在）
         if self.is_rank_0():
             os.makedirs(output_dir, exist_ok=True)
 
+        # 解包模型，得到需要保存的模型
         model_to_save = self._unwrap_model(model)
 
         output_state_dict = {}
+        # 遍历模型的所有参数
         for k, v in model_to_save.named_parameters():
+            # 获取需要提取的参数
             params_to_fetch = _z3_params_to_fetch([v])
+            # 使用DeepSpeed的GatheredParameters上下文管理器来聚集参数
             with deepspeed.zero.GatheredParameters(params_to_fetch, enabled=len(params_to_fetch) > 0):
+                # 将参数移动到CPU
                 vv = v.data.cpu()
+                # 如果当前进程是rank 0，将参数添加到输出状态字典中
                 if self.is_rank_0():
                     output_state_dict[k] = vv
 
+        # 如果当前进程是rank 0，保存模型的状态字典
         if self.is_rank_0():
             state_dict = model_to_save.state_dict()
 
+            # 遍历模型的所有缓冲区
             for k, v in model_to_save.named_buffers():
                 if k not in state_dict:
                     continue
+                # 将缓冲区移动到CPU
                 vv = v.data.cpu()
+                # 将缓冲区添加到输出状态字典中
                 output_state_dict[k] = vv
 
+            # 获取状态字典的键和输出状态字典的键
             state_dict_keys = set(state_dict.keys())
             output_state_dict_keys = set(output_state_dict.keys())
+            # 确保状态字典的键是输出状态字典键的子集
             assert state_dict_keys.issubset(
                 output_state_dict_keys
             ), f"mismatch keys {output_state_dict_keys.symmetric_difference(state_dict_keys)}"
 
+            # 如果模型是PeftModel类型，保存预训练模型到输出目录
             if isinstance(model_to_save, PeftModel):
                 model_to_save.save_pretrained(output_dir, **kwargs)
+                # 如果stage是3，保存适配器模型状态字典
                 if self.stage == 3:
                     torch.save(
                         get_peft_model_state_dict(model_to_save, output_state_dict),
                         os.path.join(output_dir, "adapter_model.bin"),
                     )
             else:
+                # 否则，直接保存预训练模型和状态字典
                 model_to_save.save_pretrained(output_dir, state_dict=output_state_dict, **kwargs)
 
+            # 保存模型配置到输出目录
             output_config_file = os.path.join(output_dir, "config.json")
             model_to_save.config.to_json_file(output_config_file)
+            # 保存分词器到输出目录
             tokenizer.save_pretrained(output_dir)
 
+            # 如果训练模型路径存在，将所有以.py结尾的文件复制到输出目录
             train_from_model_path = model_to_save.config._name_or_path
             if os.path.exists(train_from_model_path):
                 for filename in os.listdir(train_from_model_path):
                     if filename.endswith(".py"):
                         shutil.copy(os.path.join(train_from_model_path, filename), os.path.join(output_dir, filename))
 
+
     # 进行数据归约操作，支持mean、max和sum三种操作
     def all_reduce(self, data, op="mean"):
+        # 确保操作符是"mean"、"max"或"sum"之一
         assert op in ("mean", "max", "sum")
+        
+        # 如果data是字典类型
         if isinstance(data, dict):
             ret = {}
+            # 遍历字典的每个键值对，递归调用all_reduce
             for k, v in data.items():
                 ret[k] = self.all_reduce(v, op)
             return ret
         else:
             is_tensor = True
+            # 如果data不是torch.Tensor类型，将其转换为Tensor
             if not isinstance(data, torch.Tensor):
                 data = torch.Tensor([data])
                 is_tensor = False
+            # 判断data是否在CPU上
             is_cpu_tensor = data.device.type == "cpu"
 
+            # 如果data在CPU上，将其移动到当前GPU设备上
             if is_cpu_tensor:
                 data = data.to(torch.cuda.current_device())
+            # 如果操作是"mean"，将data除以世界大小（即进程总数）
             if op == "mean":
                 data /= self.world_size
+            # 调用分布式的all_reduce操作，根据操作符决定使用最大值或和的方式
             dist.all_reduce(data, op=dist.ReduceOp.MAX if op == "max" else dist.ReduceOp.SUM)
+            # 如果data最初在CPU上，将其移回CPU
             if is_cpu_tensor:
                 data = data.cpu()
+            # 如果最初data不是Tensor，返回其值；否则返回Tensor
             return data.item() if not is_tensor else data
+
 
     # 收集所有GPU中的数据
     def all_gather(self, data):

@@ -192,13 +192,13 @@ def _get_reward_model(base_pretrained_model, base_llm_model):
             return_output=False,
         ) -> torch.Tensor:
             # 根据attention_mask计算position_ids，用于位置编码
-            position_ids = attention_mask.long().cumsum(-1) - 1
-            position_ids.masked_fill_(attention_mask == 0, 1)
+            position_ids = attention_mask.long().cumsum(-1) - 1 # 将attention_mask转换为长整型，并在最后一个维度上进行累加，然后减1，得到位置id
+            position_ids.masked_fill_(attention_mask == 0, 1) # 使用attention_mask等于0的位置，将position_ids对应位置的值填充为1
             outputs = getattr(self, self.base_model_prefix)(
                 input_ids, attention_mask=attention_mask, position_ids=position_ids
-            )
-            last_hidden_states = outputs["last_hidden_state"]
-            values = self.value_head(last_hidden_states).squeeze(-1)
+            ) # 使用getattr函数获取self的base_model_prefix属性对应的方法，并调用该方法，传入input_ids、attention_mask和position_ids作为参数，得到输出
+            last_hidden_states = outputs["last_hidden_state"] # 从outputs中获取"last_hidden_state"对应的值，即最后一层的隐藏状态
+            values = self.value_head(last_hidden_states).squeeze(-1) # 将last_hidden_states传入self.value_head方法，得到值，然后在最后一个维度上进行压缩，移除大小为1的维度
 
             # 在训练模式下，使用最后一个token的值作为奖励
             if self.training:
