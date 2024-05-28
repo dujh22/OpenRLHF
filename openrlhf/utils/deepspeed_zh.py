@@ -161,16 +161,17 @@ class DeepspeedStrategy(ABC):
     def prepare(
         self, *models_or_model_optim_pairs: ModelOrModelOptimPair, is_rlhf=False
     ) -> Union[List[ModelOrModelOptimPair], ModelOrModelOptimPair]:
-        ret = []
-        self.is_rlhf = is_rlhf
-        for arg in models_or_model_optim_pairs:
-            if isinstance(arg, tuple):
-                assert len(arg) == 3, f'Expect (model, optimizer, scheduler) pair, got a tuple with size "{len(arg)}"'
-                ret.append(self._ds_init_train_model(*arg))
-            else:
-                ret.append(self._ds_init_eval_model(arg))
+        ret = []  # 初始化一个空列表用于存储返回的模型或模型-优化器对
+        self.is_rlhf = is_rlhf  # 设置是否使用强化学习人类反馈的标志
+        for arg in models_or_model_optim_pairs:  # 遍历传入的所有模型或模型-优化器对
+            if isinstance(arg, tuple):  # 如果参数是一个元组
+                assert len(arg) == 3, f'Expect (model, optimizer, scheduler) pair, got a tuple with size "{len(arg)}"'  
+                # 断言元组的长度为3，即(model, optimizer, scheduler)对
+                ret.append(self._ds_init_train_model(*arg))  # 初始化训练模型并添加到返回列表中
+            else:  # 如果参数不是元组
+                ret.append(self._ds_init_eval_model(arg))  # 初始化评估模型并添加到返回列表中
 
-        return ret[0] if len(ret) == 1 else ret
+        return ret[0] if len(ret) == 1 else ret  # 如果返回列表中只有一个元素，则返回该元素，否则返回整个列表
 
     # 初始化训练模型配置
     def _ds_init_train_model(self, model, optim, scheduler):
@@ -215,20 +216,22 @@ class DeepspeedStrategy(ABC):
 
     # 初始化评估模型配置
     def _ds_init_eval_model(self, model):
-        is_actor = isinstance(model, Actor)
-        ds_config = self.get_ds_eval_config(offload=getattr(model, "_offload", False))
+        is_actor = isinstance(model, Actor)  # 判断模型是否为Actor类的实例
+        ds_config = self.get_ds_eval_config(offload=getattr(model, "_offload", False))  # 获取评估配置，判断是否需要offload
 
+        # 使用deepspeed初始化引擎
         engine, *_ = deepspeed.initialize(
-            model=model.model if is_actor else model,
-            args={"local_rank": self.args.local_rank},
-            config=ds_config,
-            dist_init_required=True,
+            model=model.model if is_actor else model,  # 如果是Actor类实例，则使用其内部的model属性，否则直接使用model
+            args={"local_rank": self.args.local_rank},  # 传入本地rank参数
+            config=ds_config,  # 传入DeepSpeed配置
+            dist_init_required=True,  # 需要进行分布式初始化
         )
-        if is_actor:
-            model.model = engine
+        
+        if is_actor:  # 如果是Actor类实例
+            model.model = engine  # 将初始化后的引擎赋值给Actor的model属性
         else:
-            model = engine
-        return model
+            model = engine  # 否则直接赋值给model
+        return model  # 返回初始化后的模型
 
     # 获取评估模型的DeepSpeed配置
     def get_ds_eval_config(self, offload=False):
