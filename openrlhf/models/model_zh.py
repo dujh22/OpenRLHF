@@ -46,26 +46,34 @@ def get_llm_for_sequence_regression(
     返回:
         nn.Module: 预训练的变压器模型。
     """
+    
+    # 确保模型类型是 "critic" 或 "reward"
     assert (
         model_type == "critic" or model_type == "reward"
-    ), f"invalid model_type: {model_type}, should be critic or reward."  # 确保模型类型是 "critic" 或 "reward"
+    ), f"invalid model_type: {model_type}, should be critic or reward."
 
-    config = AutoConfig.from_pretrained(model_name_or_path, trust_remote_code=True)  # 从预训练模型加载配置
-    config.normalize_reward = normalize_reward  # 设置是否标准化奖励
-    config._attn_implementation = "flash_attention_2" if use_flash_attention_2 else "eager"  # 设置注意力实现方式
+    # 从预训练模型加载配置
+    config = AutoConfig.from_pretrained(model_name_or_path, trust_remote_code=True)
+    # 设置是否标准化奖励
+    config.normalize_reward = normalize_reward
+    # 设置注意力实现方式
+    config._attn_implementation = "flash_attention_2" if use_flash_attention_2 else "eager"
 
     try:
-        base_class = AutoModel._model_mapping[type(config)]  # 获取基础模型类
-        base_pretrained_class = base_class.__base__  # 获取基础预训练模型类
+        # 获取基础模型类
+        base_class = AutoModel._model_mapping[type(config)]
+        # 获取基础预训练模型类
+        base_pretrained_class = base_class.__base__
+        # 根据模型类型选择奖励模型或批判模型
         if model_type == "reward":
-            cls_class = _get_reward_model(base_pretrained_class, base_class)  # 获取奖励模型类
+            cls_class = _get_reward_model(base_pretrained_class, base_class)
         else:
-            cls_class = _get_critic_model(base_pretrained_class, base_class)  # 获取批判模型类
+            cls_class = _get_critic_model(base_pretrained_class, base_class)
     except Exception as e:
         print("Failed to load from AutoModel, construct from modelling file.")  # 打印加载失败信息
         module_file, causal_model_name = config.auto_map["AutoModelForCausalLM"].split(".")
 
-        # 特殊情况
+        # 特殊情况处理
         if causal_model_name == "QWenLMHeadModel":
             auto_model_name = "QWenModel"
             pretrained_model_name = "QWenPreTrainedModel"
@@ -81,33 +89,38 @@ def get_llm_for_sequence_regression(
 
         logger.info(f"BASE_MODEL_CLASS: {auto_model_name}, PRETRAINED_MODEL_CLASS: {pretrained_model_name}")
 
+        # 获取动态模块中的基础预训练类
         base_pretrained_class = get_class_from_dynamic_module(
             f"{module_file}.{pretrained_model_name}", model_name_or_path
-        )  # 获取动态模块中的基础预训练类
-        base_class = get_class_from_dynamic_module(f"{module_file}.{auto_model_name}", model_name_or_path)  # 获取动态模块中的基础类
+        )
+        # 获取动态模块中的基础类
+        base_class = get_class_from_dynamic_module(f"{module_file}.{auto_model_name}", model_name_or_path)
+        # 根据模型类型选择奖励模型或批判模型
         if model_type == "reward":
-            cls_class = _get_reward_model(base_pretrained_class, base_class)  # 获取奖励模型类
+            cls_class = _get_reward_model(base_pretrained_class, base_class)
         else:
-            cls_class = _get_critic_model(base_pretrained_class, base_class)  # 获取批判模型类
+            cls_class = _get_critic_model(base_pretrained_class, base_class)
 
     # 注意：dschf 在函数作用域中定义以避免全局影响
-    # 参考：https://huggingface.co/docs/transformers/main_classes/deepspeed#nontrainer-deepspeed-integration
+    # DeepSpeed配置，用于在启用 ZeRO-3 时将模型拆分到多个 GPU 上
     if ds_config is not None and ds_config["zero_optimization"]["stage"] == 3:
-        dschf = HfDeepSpeedConfig(ds_config)  # 初始化 DeepSpeed 配置
+        dschf = HfDeepSpeedConfig(ds_config)
     else:
         dschf = None
 
+    # 如果需要以 4-bit 加载模型，初始化 BitsAndBytes 配置
     if load_in_4bit:
-        assert bf16, "we only support bnb_4bit_compute_dtype = bf16"  # 确保 bf16 为 True
+        assert bf16, "we only support bnb_4bit_compute_dtype = bf16"
         nf4_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
             bnb_4bit_use_double_quant=True,
             bnb_4bit_compute_dtype=torch.bfloat16,
-        )  # 初始化 BitsAndBytes 配置
+        )
     else:
         nf4_config = None
 
+    # 从预训练模型加载模型
     model = cls_class.from_pretrained(
         model_name_or_path,
         config=config,
@@ -115,19 +128,19 @@ def get_llm_for_sequence_regression(
         torch_dtype=torch.bfloat16 if bf16 else "auto",
         quantization_config=nf4_config,
         **kwargs,
-    )  # 从预训练模型加载模型
+    )
 
-    # LoRA
+    # LoRA 配置
     if lora_rank > 0:
-        model.enable_input_require_grads()  # 启用输入需要梯度
+        model.enable_input_require_grads()
         lora_config = LoraConfig(
             r=lora_rank,
             lora_alpha=lora_alpha,
             target_modules=target_modules,
             lora_dropout=lora_dropout,
             bias="none",
-        )  # 初始化 LoRA 配置
-        model = get_peft_model(model, lora_config)  # 获取 PEFT 模型
+        )
+        model = get_peft_model(model, lora_config)
 
         if load_in_4bit:
             for name, module in model.named_modules():
@@ -142,8 +155,8 @@ def get_llm_for_sequence_regression(
     # MoE - 平衡损失
     model_config = model.config.to_dict()
     if "output_router_logits" in model_config:
-        print("[MoE] set output_router_logits as True")  # 打印 MoE 输出路由日志
-        model.config.output_router_logits = True  # 设置输出路由日志为 True
+        print("[MoE] set output_router_logits as True")
+        model.config.output_router_logits = True
 
     # 注意：仅用于奖励模型训练，手动初始化 value_head
     # 因为 deepspeed.zero.Init() 不会初始化它们
@@ -157,8 +170,8 @@ def get_llm_for_sequence_regression(
         else:
             model.value_head.weight.data.normal_(mean=0.0, std=1 / (config.hidden_size + 1))
 
-    return model  # 返回模型
-
+    # 返回模型
+    return model
 
 # 定义一个获取奖励模型的辅助函数
 def _get_reward_model(base_pretrained_model, base_llm_model):
@@ -222,54 +235,69 @@ def _get_reward_model(base_pretrained_model, base_llm_model):
     return LLMForSequenceRegression
 
 
-
 # 获取批判模型的辅助函数
 def _get_critic_model(base_pretrained_model, base_llm_model):
+    # 定义一个继承自 base_pretrained_model 的类，用于序列回归任务
     class LLMForSequenceRegression(base_pretrained_model):
-        supports_gradient_checkpointing = True  # 支持梯度检查点
+        # 定义类属性，表示支持梯度检查点
+        supports_gradient_checkpointing = True
 
         def __init__(self, config: AutoConfig):
+            # 调用父类的初始化方法
             super().__init__(config)
+            # 动态设置基础模型的前缀并初始化基础 LLM 模型
             setattr(self, self.base_model_prefix, base_llm_model(config))
 
-            self.value_head = nn.Linear(config.hidden_size, 1, bias=False)  # 添加线性层作为 value_head
+            # 添加线性层作为 value_head，用于计算值函数
+            self.value_head = nn.Linear(config.hidden_size, 1, bias=False)
 
-            # 标准化奖励
+            # 从配置中获取是否标准化奖励的选项
             self.normalize_reward = config.normalize_reward
-            self.register_buffer("mean", torch.zeros(1), persistent=False)  # 注册均值缓冲区
-            self.register_buffer("std", torch.ones(1), persistent=False)  # 注册标准差缓冲区
+            # 注册一个均值缓冲区，用于标准化处理，默认为0
+            self.register_buffer("mean", torch.zeros(1), persistent=False)
+            # 注册一个标准差缓冲区，用于标准化处理，默认为1
+            self.register_buffer("std", torch.ones(1), persistent=False)
 
             # 从配置文件中加载均值和标准差
             if hasattr(config, "mean"):
                 self.mean[0] = config.mean
+            if hasattr(config, "std"):
                 self.std[0] = config.std
 
         def forward(
             self,
-            input_ids: torch.LongTensor = None,
-            action_mask: Optional[torch.Tensor] = None,
-            attention_mask: Optional[torch.Tensor] = None,
-            return_output=False,
+            input_ids: torch.LongTensor = None,  # 输入序列的 ID
+            action_mask: Optional[torch.Tensor] = None,  # 行动掩码
+            attention_mask: Optional[torch.Tensor] = None,  # 注意力掩码
+            return_output=False,  # 是否返回完整的模型输出
         ) -> torch.Tensor:
-            # 参考：https://github.com/OpenLLMAI/OpenRLHF/issues/217
+            # 参考网址：https://github.com/OpenLLMAI/OpenRLHF/issues/217
+            # 生成 position_ids，表示序列中每个 token 的位置，用于位置编码
             position_ids = attention_mask.long().cumsum(-1) - 1
+            # 将注意力掩码中为0的位置对应的 position_ids 设置为1
             position_ids.masked_fill_(attention_mask == 0, 1)
+            # 使用基础模型进行前向传播
             outputs = getattr(self, self.base_model_prefix)(
                 input_ids,
                 attention_mask=attention_mask,
                 position_ids=position_ids,
             )
+            # 获取最后隐藏层的输出状态
             last_hidden_states = outputs["last_hidden_state"]
+            # 通过 value_head 计算值函数，并去掉序列最后一个时间步的输出
             values = self.value_head(last_hidden_states).squeeze(-1)[:, :-1]
+            # 获取行动掩码的维度
             num_actions = action_mask.size(1)
 
-            # 标准化奖励
+            # 如果需要标准化奖励，进行标准化处理
             if self.normalize_reward:
                 values = (values - self.mean) / self.std
 
+            # 如果 return_output 为真，返回值函数与完整输出；否则，仅返回值函数
             if return_output:
                 return outputs if num_actions is None else (values[:, -num_actions:], outputs)
             else:
                 return values[:, -num_actions:]
 
-    return LLMForSequenceRegression  # 返回批判模型类
+    # 返回定义的批判模型类
+    return LLMForSequenceRegression

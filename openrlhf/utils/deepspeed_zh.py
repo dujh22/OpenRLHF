@@ -92,11 +92,20 @@ class DeepspeedStrategy(ABC):
 
     # 创建优化器
     def create_optimizer(self, model, **kwargs) -> Optimizer:
+        # 如果传入的模型是 Actor 的实例，需要提取内部的实际模型
         if isinstance(model, Actor):
             model = model.model
+        
+        # 选择使用 DeepSpeedCPUAdam 或 FusedAdam 优化器，基于是否开启 adam_offload
         AdamOptimizer = DeepSpeedCPUAdam if self.adam_offload else FusedAdam
+        
+        # 获取分组后的优化器参数，用于传给优化器
         optim_params = get_optimizer_grouped_parameters(model, kwargs["weight_decay"])
+        
+        # 创建优化器实例，传入参数和其他配置项
         optim = AdamOptimizer(optim_params, **kwargs)
+        
+        # 返回创建好的优化器实例
         return optim
 
     # 定义反向传播过程
@@ -121,31 +130,33 @@ class DeepspeedStrategy(ABC):
     # 设置数据加载器
     def setup_dataloader(
         self,
-        replay_buffer,
-        batch_size: int,
-        pin_memory: bool = False,
-        shuffle=True,
-        collate_fn=None,
-        drop_last=True,
-        sampler=None,
+        replay_buffer,  # 重放缓冲区，即数据集
+        batch_size: int,  # 批量大小
+        pin_memory: bool = False,  # 是否将数据加载到固定内存中，默认为 False
+        shuffle=True,  # 是否打乱数据，默认为 True
+        collate_fn=None,  # 用于合并小批量数据的函数，默认为 None
+        drop_last=True,  # 如果无法整除批次长度，是否丢弃最后一个不完整的批次，默认为 True
+        sampler=None,  # 样本采样器，默认为 None
     ):
+        # 如果没有提供采样器，则创建一个分布式采样器
         if sampler is None:
             sampler = DistributedSampler(
-                replay_buffer,
-                num_replicas=dist.get_world_size(),
-                rank=dist.get_rank(),
-                shuffle=shuffle,
-                seed=self.seed,
-                drop_last=drop_last,
+                replay_buffer,  # 数据集
+                num_replicas=dist.get_world_size(),  # 总的 GPU 数量
+                rank=dist.get_rank(),  # 当前 GPU 的排名
+                shuffle=shuffle,  # 是否打乱数据
+                seed=self.seed,  # 随机种子，用于确保数据分布的一致性
+                drop_last=drop_last,  # 是否丢弃最后一个不完整的批次
             )
 
+        # 返回 DataLoader 实例，用于加载数据
         return DataLoader(
-            replay_buffer,
-            batch_size=batch_size,
-            sampler=sampler,
-            drop_last=drop_last,
-            collate_fn=collate_fn,
-            pin_memory=pin_memory,
+            replay_buffer,  # 数据集
+            batch_size=batch_size,  # 每个批次的大小
+            sampler=sampler,  # 样本采样器
+            drop_last=drop_last,  # 是否丢弃最后一个不完整的批次
+            collate_fn=collate_fn,  # 用于合并小批量数据的函数
+            pin_memory=pin_memory,  # 是否将数据加载到固定内存中
         )
 
     # 移除模型包装，用于获取实际的模型
