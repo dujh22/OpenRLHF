@@ -234,7 +234,7 @@ class ActorModelRayActor(BasePPORole):
             max_count=args.max_samples,
             return_eval=False,
         )
-        prompts_data = prompts_data.select(range(min(args.max_samples, len(prompts_data))))
+        prompts_data = prompts_data.select(range(len(prompts_data)))
         prompts_dataset = PromptDataset(prompts_data, self.tokenizer, strategy, input_template=args.input_template)
         self.prompts_dataloader = strategy.setup_dataloader(prompts_dataset, args.micro_rollout_batch_size, True, True)
 

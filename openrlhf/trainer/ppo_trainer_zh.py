@@ -153,6 +153,22 @@ class PPOTrainer(ABC):  # 定义PPOTrainer类，继承自ABC（抽象基类）
         self.pretrain_dataloader = pretrain_dataloader  # 设置预训练数据加载器
 
         update_timesteps = args.rollout_batch_size // (self.strategy.world_size * self.micro_rollout_batch_size)  # 计算更新时间步
+        '''
+        args.rollout_batch_size：表示在一个“rollout”过程中处理的批次的总大小。可以认为这是一轮“rollout”期间所处理的样本总量。
+        
+        self.strategy.world_size：表示分布式训练中使用的设备（如GPU）的总数量。可以认为是并行训练时，模型被分配到的GPU数量。
+
+        self.micro_rollout_batch_size：表示每次微更新（micro-update）中处理的样本大小。在大批次训练中，通常会将大批次拆分为多个小批次，以便于逐步更新模型。
+
+        args.rollout_batch_size // (self.strategy.world_size * self.micro_rollout_batch_size)：
+
+        求解args.rollout_batch_size与self.strategy.world_size和self.micro_rollout_batch_size乘积的整数部分。这相当于：
+
+        将整个“rollout”批次大小除以设备数量（world_size），再除以前面提到的每次微更新处理的样本大小，这样可以得到每个更新时间步中模型更新的次数。换句话说，这是计算每个设备在一次模型更新之前需要处理多少个微小批次的样本。
+
+        综合起来，这行代码的目的在于确定在一个大批次的“rollout”过程中，每进行多少次微小批次的更新，就要进行一次全局的模型更新。
+        '''
+
         global_step = 1  # 初始化全局步数
 
         # 获取评估和保存步骤

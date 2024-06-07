@@ -122,64 +122,68 @@ class NaiveExperienceMaker(ABC):  # 定义NaiveExperienceMaker类，继承自抽
         return {k: v.to(device) for k, v in batch.items()}  # 将所有张量移动到指定设备
 
     @torch.no_grad()
-    def make_experience(self, prompts: Union[str, List[str]], **generate_kwargs) -> Experience:  # 定义生成经验函数
-        self.actor.eval()  # 设置actor模型为评估模式
-        self.critic.eval()  # 设置critic模型为评估模式
-        self.initial_model.eval()  # 设置初始模型为评估模式
-        self.reward_model.eval()  # 设置奖励模型为评估模式
+    def make_experience(self, prompts: Union[str, List[str]], **generate_kwargs) -> Experience:  # 定义生成经验的函数
+        self.actor.eval()  # 设置actor模型为评估模式，不进行梯度计算
+        self.critic.eval()  # 设置critic模型为评估模式，不进行梯度计算
+        self.initial_model.eval()  # 设置初始模型为评估模式，不进行梯度计算
+        self.reward_model.eval()  # 设置奖励模型为评估模式，不进行梯度计算
 
         # 生成序列
-        inputs = self.tokenize_fn(prompts, self.prompt_max_len, device="cuda")  # 标记化输入
-        sequences, attention_mask, action_mask = self.actor.generate(**inputs, **generate_kwargs)  # 生成序列、注意力掩码和动作掩码
-        num_actions = action_mask.size(1)  # 获取动作数量
+        inputs = self.tokenize_fn(prompts, self.prompt_max_len, device="cuda")  # 标记化输入，生成模型需要的输入格式
+        sequences, attention_mask, action_mask = self.actor.generate(**inputs, **generate_kwargs)  # 使用actor模型生成序列、注意力掩码和动作掩码
+        num_actions = action_mask.size(1)  # 获取动作的数量
 
-        # 计算动作对数概率
+        # 计算动作的对数概率
         action_log_probs = self.actor(sequences, num_actions, attention_mask)
 
-        # 计算初始动作对数概率
+        # 计算初始动作的对数概率
         base_action_log_probs = self.initial_model(sequences, num_actions, attention_mask)
 
-        # 计算值
+        # 计算值函数
         value = self.critic(sequences, action_mask, attention_mask)
 
         # 计算奖励
         r = self.reward_model(sequences, attention_mask)
 
+        # 计算最终奖励和KL散度
         reward, kl = compute_reward(
-            r,
-            self.kl_ctl.value,
-            action_log_probs,
-            base_action_log_probs,
-            action_mask=action_mask,
-        )
-        advantage, returns = self.get_advantages_and_returns(
-            value,
-            reward,
-            action_mask,
-            generate_kwargs["gamma"],
-            generate_kwargs["lambd"],
+            r,  # 奖励值
+            self.kl_ctl.value,  # KL控制器值
+            action_log_probs,  # 动作的对数概率
+            base_action_log_probs,  # 初始动作的对数概率
+            action_mask=action_mask,  # 动作掩码
         )
 
-        info = {
-            "kl": masked_mean(kl, action_mask, dim=-1),
-            "reward": r,
-            "return": reward.sum(dim=-1),
-            "response_length": action_mask.float().sum(dim=-1),
-            "total_length": attention_mask.float().sum(dim=-1),
+        # 计算优势和回报
+        advantage, returns = self.get_advantages_and_returns(
+            value,  # 值函数
+            reward,  # 奖励值
+            action_mask,  # 动作掩码
+            generate_kwargs["gamma"],  # 折扣因子gamma
+            generate_kwargs["lambd"],  # GAE参数lambda
+        )
+
+        info = {  # 创建信息字典
+            "kl": masked_mean(kl, action_mask, dim=-1),  # 计算KL散度的掩码平均值
+            "reward": r,  # 奖励值
+            "return": reward.sum(dim=-1),  # 回报之和
+            "response_length": action_mask.float().sum(dim=-1),  # 响应长度
+            "total_length": attention_mask.float().sum(dim=-1),  # 总长度
         }
-        # 重置模型状态
+
+        # 重置模型状态为训练模式
         self.actor.train()
         self.critic.train()
 
-        return Experience(
-            sequences,
-            action_log_probs,
-            value,
-            returns,
-            advantage,
-            attention_mask,
-            action_mask,
-            info,
+        return Experience(  # 返回一个包含所有生成结果的Experience对象
+            sequences,  # 生成的序列
+            action_log_probs,  # 动作的对数概率
+            value,  # 值函数
+            returns,  # 回报
+            advantage,  # 优势
+            attention_mask,  # 注意力掩码
+            action_mask,  # 动作掩码
+            info,  # 相关信息
         )
 
     @torch.no_grad()
