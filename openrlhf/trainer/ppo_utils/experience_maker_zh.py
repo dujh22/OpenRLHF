@@ -233,7 +233,7 @@ class NaiveExperienceMaker(ABC):  # 定义NaiveExperienceMaker类，继承自抽
 
         输出：
         - 优势： 形状张量（批量大小、响应大小）
-        - 回报： 形状张量（batch_size、response_size）
+        - 回报： 形状张量（批量大小、响应大小）
         """
         lastgaelam = 0  # 上一个GAE lambda
         advantages_reversed = []  # 优势的反向列表
