@@ -455,21 +455,24 @@ class DeepspeedStrategy(ABC):
 
     # 加载检查点
     def load_ckpt(
-        self,
-        model,
-        load_dir,
-        tag=None,
-        load_module_strict=True,
-        load_optimizer_states=True,
-        load_lr_scheduler_states=True,
-        load_module_only=False,
+        self,                            # self 参数，表示这是一个类的方法，绑定到实例本身
+        model,                           # 模型对象
+        load_dir,                        # 检查点保存的目录路径
+        tag=None,                        # 可选的检查点标记，指定要加载的特定检查点版本
+        load_module_strict=True,         # 是否严格匹配模型结构与检查点文件的键
+        load_optimizer_states=True,      # 是否加载优化器的状态
+        load_lr_scheduler_states=True,   # 是否加载学习率调度器的状态
+        load_module_only=False,          # 是否只加载模型模块，不加载优化器和调度器状态
     ):
+        # 确认模型是DeepSpeedEngine类型的实例
         assert isinstance(model, deepspeed.DeepSpeedEngine)
+        
+        # 调用DeepSpeed的load_checkpoint方法来加载检查点
         return model.load_checkpoint(
-            load_dir,
-            tag,
-            load_module_strict=load_module_strict,
-            load_optimizer_states=load_optimizer_states,
-            load_lr_scheduler_states=load_lr_scheduler_states,
-            load_module_only=load_module_only,
+            load_dir,                      # 检查点目录路径
+            tag,                           # 检查点标记
+            load_module_strict=load_module_strict,       # 严格匹配选项
+            load_optimizer_states=load_optimizer_states, # 加载优化器状态选项
+            load_lr_scheduler_states=load_lr_scheduler_states, # 加载学习率调度器状态选项
+            load_module_only=load_module_only,           # 仅加载模型模块选项
         )
